@@ -5,13 +5,19 @@ import android.content.Intent;
 import android.graphics.Point;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
+import android.text.TextUtils;
+import android.util.Log;
 import android.view.Window;
 import android.view.WindowManager.LayoutParams;
 import android.widget.Toast;
+
 import org.json.JSONException;
 import org.webrtc.MediaStream;
+import org.webrtc.RendererCommon;
 import org.webrtc.VideoRenderer;
 import org.webrtc.VideoRendererGui;
+
+import fr.pchab.webrtcclient.WebRtc;
 import fr.pchab.webrtcclient.WebRtcClient;
 import fr.pchab.webrtcclient.PeerConnectionParameters;
 
@@ -19,8 +25,7 @@ import java.util.List;
 
 public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
     private final static int VIDEO_CALL_SENT = 666;
-    private static final String VIDEO_CODEC_VP9 = "VP9";
-    private static final String AUDIO_CODEC_OPUS = "opus";
+
     // Local preview screen position before call is connected.
     private static final int LOCAL_X_CONNECTING = 0;
     private static final int LOCAL_Y_CONNECTING = 0;
@@ -36,13 +41,18 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
     private static final int REMOTE_Y = 0;
     private static final int REMOTE_WIDTH = 100;
     private static final int REMOTE_HEIGHT = 100;
-    private VideoRendererGui.ScalingType scalingType = VideoRendererGui.ScalingType.SCALE_ASPECT_FILL;
+    private RendererCommon.ScalingType scalingType = RendererCommon.ScalingType.SCALE_ASPECT_FILL;
     private GLSurfaceView vsv;
     private VideoRenderer.Callbacks localRender;
     private VideoRenderer.Callbacks remoteRender;
     private WebRtcClient client;
     private String mSocketAddress;
     private String callerId;
+
+    private String callId;
+
+    public static final String INTENT_ACTION_CALL = "webrtc_call";
+    public static final String INTENT_ACTION_ANSWER = "webrtc_answer";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -65,6 +75,20 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
             @Override
             public void run() {
                 init();
+
+                if (TextUtils.equals(INTENT_ACTION_ANSWER, getIntent().getAction())) {
+                    callerId = getIntent().getExtras().getString("callerId");
+                    try {
+                        answer(callerId);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                } else if (TextUtils.equals(INTENT_ACTION_CALL, getIntent().getAction())) {
+
+                    callId = getIntent().getExtras().getString("callId");
+
+                    startCam();
+                }
             }
         });
 
@@ -86,19 +110,23 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
     }
 
     private void init() {
+        /*
         Point displaySize = new Point();
         getWindowManager().getDefaultDisplay().getSize(displaySize);
         PeerConnectionParameters params = new PeerConnectionParameters(
                 true, false, displaySize.x, displaySize.y, 30, 1, VIDEO_CODEC_VP9, true, 1, AUDIO_CODEC_OPUS, true);
+                */
 
-        client = new WebRtcClient(this, mSocketAddress, params, VideoRendererGui.getEGLContext());
+        //client = new WebRtcClient(this, mSocketAddress, params);
+        client = WebRtc.getInstance();
+        client.addRtcListener(this);
     }
 
     @Override
     public void onPause() {
         super.onPause();
         vsv.onPause();
-        if(client != null) {
+        if (client != null) {
             client.onPause();
         }
     }
@@ -107,17 +135,23 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
     public void onResume() {
         super.onResume();
         vsv.onResume();
-        if(client != null) {
+        if (client != null) {
             client.onResume();
         }
     }
 
     @Override
     public void onDestroy() {
-        if(client != null) {
+        if (client != null) {
+            client.removeRtcListener(this);
             client.onDestroy();
         }
         super.onDestroy();
+    }
+
+    @Override
+    public void onUserCalling(String targetUserId) {
+
     }
 
     @Override
@@ -142,7 +176,7 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
         Intent msg = new Intent(Intent.ACTION_SEND);
         msg.putExtra(Intent.EXTRA_TEXT, mSocketAddress + callId);
         msg.setType("text/plain");
-        startActivityForResult(Intent.createChooser(msg, "Call someone :"), VIDEO_CALL_SENT);
+        //startActivityForResult(Intent.createChooser(msg, "Call someone :"), VIDEO_CALL_SENT);
     }
 
     @Override
@@ -154,7 +188,7 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
 
     public void startCam() {
         // Camera settings
-        client.start("android_test");
+        client.start();
     }
 
     @Override
@@ -173,7 +207,12 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
         VideoRendererGui.update(localRender,
                 LOCAL_X_CONNECTING, LOCAL_Y_CONNECTING,
                 LOCAL_WIDTH_CONNECTING, LOCAL_HEIGHT_CONNECTING,
-                scalingType);
+                scalingType, false);
+
+        if (!TextUtils.isEmpty(callId)) {
+            WebRtc.getInstance().callUser(callId);
+        }
+
     }
 
     @Override
@@ -181,11 +220,11 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
         remoteStream.videoTracks.get(0).addRenderer(new VideoRenderer(remoteRender));
         VideoRendererGui.update(remoteRender,
                 REMOTE_X, REMOTE_Y,
-                REMOTE_WIDTH, REMOTE_HEIGHT, scalingType);
+                REMOTE_WIDTH, REMOTE_HEIGHT, scalingType, false);
         VideoRendererGui.update(localRender,
                 LOCAL_X_CONNECTED, LOCAL_Y_CONNECTED,
                 LOCAL_WIDTH_CONNECTED, LOCAL_HEIGHT_CONNECTED,
-                scalingType);
+                scalingType, false);
     }
 
     @Override
@@ -193,6 +232,6 @@ public class RtcActivity extends Activity implements WebRtcClient.RtcListener {
         VideoRendererGui.update(localRender,
                 LOCAL_X_CONNECTING, LOCAL_Y_CONNECTING,
                 LOCAL_WIDTH_CONNECTING, LOCAL_HEIGHT_CONNECTING,
-                scalingType);
+                scalingType, false);
     }
 }
